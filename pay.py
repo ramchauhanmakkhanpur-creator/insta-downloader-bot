@@ -53,30 +53,42 @@ def deduct_credits(user_id):
     conn.commit()
     conn.close()
 
-# ====================== START & BUY ======================
+# ====================== START ======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not has_received_welcome(user_id):
         add_credits(user_id, 20)
-        await update.message.reply_text("🚀 **20 FREE Credits** mil gaye!\nLink bhejo!")
+        await update.message.reply_text("🚀 **20 FREE Credits** mil gaye! (Lifetime sirf 1 baar)\nLink bhejo!")
     else:
         await update.message.reply_text(f"👋 Welcome back! Credits: {get_credits(user_id)}")
 
+# ====================== /BUY COMMAND ======================
 async def buy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     qr_path = os.path.join(script_dir, 'paytm_qr.jpg')
+    
     if os.path.exists(qr_path):
-        await update.message.reply_photo(photo=open(qr_path, 'rb'), caption="💳 ₹45 mein 1000 Credits\nScreenshot bhej do!")
+        await update.message.reply_photo(
+            photo=open(qr_path, 'rb'),
+            caption="""💳 **₹45 mein 1000 Credits**
 
+1. QR scan karke exactly ₹45 bhej do
+2. Screenshot yahin bhej do
+3. Bot turant credits add kar dega! 🔥"""
+        )
+    else:
+        await update.message.reply_text("❌ paytm_qr.jpg file nahi mili!")
+
+# ====================== SCREENSHOT ======================
 async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     file = await update.message.photo[-1].get_file()
     os.makedirs("screenshots", exist_ok=True)
     await file.download_to_drive(f"screenshots/{user_id}_{int(datetime.now().timestamp())}.jpg")
     add_credits(user_id, 1000)
-    await update.message.reply_text(f"✅ 1000 Credits add ho gaye!\nAb credits: {get_credits(user_id)}")
+    await update.message.reply_text(f"✅ **1000 Credits add ho gaye!**\nAb credits: {get_credits(user_id)}")
 
-# ====================== FINAL STRONG FIX (GIF + NO AUDIO SOLVED) ======================
+# ====================== MAIN DOWNLOAD (AB REEL KE LIYE SUPER STRONG) ======================
 async def download_zero_error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     user_id = update.effective_user.id
@@ -85,25 +97,30 @@ async def download_zero_error(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Sirf Instagram link bhejo!")
         return
 
-    if get_credits(user_id) < 10:
-        await update.message.reply_text("⛔ Credits khatam!\n/buy type karo")
+    credits = get_credits(user_id)
+    if credits < 10:
+        await update.message.reply_text("⛔ **Credits khatam!**\n\n1000 Credits ke liye sirf **/buy** type karo")
         return
 
     deduct_credits(user_id)
     status = await update.message.reply_text("⚡ TURANT DOWNLOAD SHURU...\nCredits left: " + str(get_credits(user_id)))
 
     success = False
+    start_time = asyncio.get_event_loop().time()
 
+    # Loading animation
     async def loading_loop():
         msgs = ["⚡ Fast server connect...", "⚡ Reel extract ho rahi hai...", "⚡ Almost ready 🔥", "⚡ Thoda aur wait 😊"]
         i = 0
-        while not success:
-            await status.edit_text(msgs[i % len(msgs)])
+        while asyncio.get_event_loop().time() - start_time < 75:
+            if success: break
+            try: await status.edit_text(msgs[i % len(msgs)])
+            except: pass
             await asyncio.sleep(3)
             i += 1
     asyncio.create_task(loading_loop())
 
-    # Primary APIs
+    # Fast API 1
     try:
         r = requests.post("https://co.wuk.sh/api/json", json={"url": url}, timeout=12)
         if r.json().get("url"):
@@ -111,6 +128,7 @@ async def download_zero_error(update: Update, context: ContextTypes.DEFAULT_TYPE
             success = True
     except: pass
 
+    # Fast API 2
     if not success:
         try:
             r = requests.post("https://api.cobalt.tools/api/json", json={"url": url}, timeout=12)
@@ -119,42 +137,38 @@ async def download_zero_error(update: Update, context: ContextTypes.DEFAULT_TYPE
                 success = True
         except: pass
 
-    # STRONG BACKUP - GIF ko force MP4 + AUDIO mein convert
+    # Strong Backup (yt-dlp direct URL) - Reel ke liye best
     if not success:
         try:
-            ydl_opts = {
-                'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]',
-                'merge_output_format': 'mp4',
-                'quiet': True,
-                'no_warnings': True,
-                'socket_timeout': 40,
-                'postprocessors': [{
-                    'key': 'FFmpegVideoConvertor',
-                    'preferedformat': 'mp4',
-                }]
-            }
+            ydl_opts = {'format': 'best[height<=720][ext=mp4]/best', 'quiet': True, 'socket_timeout': 30}
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-                video_url = info.get('url')
+                video_url = info.get('url') or next((f.get('url') for f in info.get('formats', []) if f.get('ext') == 'mp4' and f.get('height', 0) <= 720), None)
                 if video_url:
-                    await update.message.reply_video(video=video_url, caption="✅ TURANT HO GAYA! ⚡ (Audio + MP4 Fixed)", supports_streaming=True)
+                    await update.message.reply_video(video=video_url, caption="✅ TURANT HO GAYA! ⚡ (Backup se)", supports_streaming=True)
                     success = True
         except: pass
 
     if success:
         await status.delete()
     else:
+        # Credit refund if failed
         add_credits(user_id, 10)
-        await status.edit_text("⏳ Busy hai...\n15 sec baad try karo (credits wapas)")
+        await status.edit_text("⏳ Reel thoda busy hai...\n15 second baad dubara try karo\n(10 credits wapas add ho gaye)")
 
-# ====================== START ======================
+# ====================== START BOT ======================
 if __name__ == '__main__':
     init_db()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    qr_path = os.path.join(script_dir, 'paytm_qr.jpg')
+    print(f"✅ Bot Folder: {script_dir}")
+    print(f"QR File Check: {qr_path} → Exists? {os.path.exists(qr_path)}")
+
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("buy", buy_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_screenshot))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_zero_error))
 
-    print("✅ BOT STARTED WITH ULTIMATE GIF + AUDIO FIX!")
+    print("✅ BOT STARTED! Ab reel bhi turant download hogi")
     app.run_polling()
